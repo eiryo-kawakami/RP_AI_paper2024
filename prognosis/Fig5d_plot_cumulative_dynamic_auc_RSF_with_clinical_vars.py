@@ -26,13 +26,15 @@ feature["studynumber"] = studynumber
 patient_info = pd.read_csv("../patient_info.txt",sep="\t",header=0)
 patient_info["studynumber"] = patient_info["patient_id"].astype(str).str.cat(patient_info["LR"].str.lower(),sep="_").astype(str)
 
-dat = pd.merge(feature.loc[:,["studynumber"]+top_10_vars],patient_info.loc[:,["patient_id","studynumber","eyesightloss<0.3","DaysToOutcome","sex"]],on="studynumber").drop("studynumber",axis=1).dropna()
-# dat = pd.merge(feature.iloc[:,1:],patient_info.loc[:,["patient_id","studynumber","eyesightloss<0.3","DaysToOutcome","sex"]],on="studynumber").drop("studynumber",axis=1).dropna()
+dat = pd.merge(feature.loc[:,["studynumber"]+top_10_vars],patient_info.loc[:,["patient_id","studynumber","eyesightloss<0.3","DaysToOutcome","LR","age","sex","cataract","cataract_surgery"]],on="studynumber").drop("studynumber",axis=1).dropna()
 dat = dat.loc[dat["DaysToOutcome"] > 0,:]
 
 patient_list = list(set(dat["patient_id"]))
 train_list = [patient_list[i] for i in range(0,len(patient_list)) if i % 3 != 2]
 test_list = [patient_list[i] for i in range(0,len(patient_list)) if i % 3 == 2]
+
+dat["sex"] = [1 if x == "M" else 0 for x in dat["sex"]]
+dat["LR"] = [1 if x == "L" else 0 for x in dat["LR"]]
 
 dat_train = dat.loc[dat["patient_id"].isin(train_list),:]
 dat_test = dat.loc[dat["patient_id"].isin(test_list),:]
@@ -44,8 +46,8 @@ X_train = dat_train.drop(["patient_id","eyesightloss<0.3","DaysToOutcome"],axis=
 
 y_test = dat_test.loc[:,["eyesightloss<0.3","DaysToOutcome","sex"]]
 y_test["eyesightloss<0.3"] = [True if i==1 else False for i in y_test["eyesightloss<0.3"]]
-y_test_M = y_test.loc[y_test["sex"]=="M",:].drop("sex",axis=1)
-y_test_F = y_test.loc[y_test["sex"]=="F",:].drop("sex",axis=1)
+y_test_M = y_test.loc[y_test["sex"]==1,:].drop("sex",axis=1)
+y_test_F = y_test.loc[y_test["sex"]==0,:].drop("sex",axis=1)
 y_test = y_test.drop("sex",axis=1)
 
 yy_test = y_test.to_records(index=False)
@@ -53,10 +55,10 @@ yy_test_M = y_test_M.to_records(index=False)
 yy_test_F = y_test_F.to_records(index=False)
 
 X_test = dat_test.drop(["patient_id","eyesightloss<0.3","DaysToOutcome"],axis=1)
-X_test_M = X_test.loc[X_test["sex"]=="M",:].drop("sex",axis=1)
-X_test_F = X_test.loc[X_test["sex"]=="F",:].drop("sex",axis=1)
+X_test_M = X_test.loc[X_test["sex"]==1,:]
+X_test_F = X_test.loc[X_test["sex"]==0,:]
 
-X_test = X_test.drop(["sex"],axis=1)
+# X_test = X_test.drop(["sex"],axis=1)
 
 times = np.arange(300,3000,100)
 print(times)
@@ -71,7 +73,7 @@ rsf_mean_auc_summary_M = []
 
 
 for i in range(10):
-	with open("./RSF_models/RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_block_split_rep"+str(i+1)+".sav", 'rb') as f:
+	with open("./RSF_models/RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_with_clinical_vars_block_split_rep"+str(i+1)+".sav", 'rb') as f:
 		rsf = cPickle.load(f)
 
 	rsf_chf_funcs = rsf.predict_cumulative_hazard_function(
@@ -131,6 +133,6 @@ plt.ylabel("time-dependent AUC")
 plt.xlim(left=0, right=3000)
 plt.grid(True)
 
-fig.savefig("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_block_split_cumulative_dynamic_auc.pdf")
+fig.savefig("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_with_clinical_vars_block_split_cumulative_dynamic_auc.pdf")
 
 

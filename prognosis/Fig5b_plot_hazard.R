@@ -1,10 +1,12 @@
 library(ggplot2)
 library(readr)
 library(dplyr)
+library(RColorBrewer)
 library(ggsci)
 
+cols1 <- brewer.pal(5, "Set1")
 
-varimp <- read_tsv("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_varimp.txt")
+varimp <- read_tsv("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_block_split_varimp.txt")
 varimp <- varimp[rev(order(rowMeans(varimp[,2:ncol(varimp)]))),]
 imp_vars <- head(varimp$`...1`,10)
 
@@ -25,101 +27,75 @@ feature_values$studynumber <- studynumber
 patient_info <- read_tsv("../patient_info.txt")
 patient_info$studynumber <- paste(patient_info$patient_id,tolower(patient_info$LR),sep="_")
 
-group <- c()
+group_700 <- c()
 for (i in 1:nrow(patient_info)){
 	if(patient_info$`eyesightloss<0.3`[i]==0){
-		group <- c(group,"no_loss")
+		group_700 <- c(group_700,"no_loss")
 	} else if(patient_info$DaysToOutcome[i] == 0){
-		group <- c(group,"already")
-	} else if(patient_info$DaysToOutcome[i] < 365){
-		group <- c(group,"within_1year")
-	} else if(patient_info$DaysToOutcome[i] < 1095){
-		group <- c(group,"within_3years")
-	} else if(patient_info$DaysToOutcome[i] < 1825){
-		group <- c(group,"within_5years")
+		group_700 <- c(group_700,"already")
+	} else if(patient_info$DaysToOutcome[i] < 700){
+		group_700 <- c(group_700,"within_700days")
 	} else {
-		group <- c(group,"over_5years")
+		group_700 <- c(group_700,"over_700days")
 	}
 }
 
-patient_info$group <- factor(group,levels=c("already","within_1year","within_3years","within_5years","over_5years","no_loss"))
+group_1400 <- c()
+for (i in 1:nrow(patient_info)){
+	if(patient_info$`eyesightloss<0.3`[i]==0){
+		group_1400 <- c(group_1400,"no_loss")
+	} else if(patient_info$DaysToOutcome[i] == 0){
+		group_1400 <- c(group_1400,"already")
+	} else if(patient_info$DaysToOutcome[i] < 1400){
+		group_1400 <- c(group_1400,"within_1400days")
+	} else {
+		group_1400 <- c(group_1400,"over_1400days")
+	}
+}
 
-surv_func <- read_tsv("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_test+already_chf_rep1.txt")
+patient_info$group_700 <- factor(group_700,levels=c("within_700days","over_700days","no_loss"))
+patient_info$group_1400 <- factor(group_1400,levels=c("within_1400days","over_1400days","no_loss"))
 
-chf_1year <- 1 - surv_func %>% pull("364.0")
-chf_2year <- 1 - surv_func %>% pull("729.0")
-chf_3year <- 1 - surv_func %>% pull("1040.0")
-chf_4year <- 1 - surv_func %>% pull("1436.0")
-chf_5year <- 1 - surv_func %>% pull("1827.0")
+surv_func <- read_tsv("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_block_split_test+already_chf_rep1.txt")
+
+chf_700days <- 1 - surv_func %>% pull("729.0")
+chf_1400days <- 1 - surv_func %>% pull("1436.0")
 
 for (i in 1:10){
 
-	surv_func <- read_tsv(paste0("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_test+already_chf_rep",i,".txt"))
+	surv_func <- read_tsv(paste0("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_block_split_test+already_chf_rep",i,".txt"))
 
-	chf_1year <- chf_1year + 1 - surv_func %>% pull("364.0")
-	chf_2year <- chf_2year + 1 - surv_func %>% pull("729.0")
-	chf_3year <- chf_3year + 1 - surv_func %>% pull("1040.0")
-	chf_4year <- chf_4year + 1 - surv_func %>% pull("1436.0")
-	chf_5year <- chf_5year + 1 - surv_func %>% pull("1827.0")
+	chf_700days <- chf_700days + 1 - surv_func %>% pull("729.0")
+	chf_1400days <- chf_1400days + 1 - surv_func %>% pull("1436.0")
+
 }
 
-chf_1year <- chf_1year / 10
-chf_2year <- chf_2year / 10
-chf_3year <- chf_3year / 10
-chf_4year <- chf_4year / 10
-chf_5year <- chf_5year / 10
+chf_700days <- chf_700days / 10
+chf_1400days <- chf_1400days / 10
 
-chf_data <- data.frame(studynumber=surv_func["studynumber"],chf_1year=chf_1year,chf_2year=chf_2year,chf_3year=chf_3year,chf_4year=chf_4year,chf_5year=chf_5year)
-chf_data <- left_join(chf_data,patient_info,by="studynumber")
+chf_data <- data.frame(studynumber=surv_func["studynumber"],chf_700days=chf_700days,chf_1400days=chf_1400days)
+chf_data <- left_join(chf_data,patient_info,by="studynumber") %>% na.omit()
 
-chf_data %>% write_tsv("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_test+already_chf_summary.txt")
+chf_data %>% write_tsv("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_block_split_test+already_chf_700days.txt")
 
-ggplot(data=chf_data,aes(x=group,y=chf_1year)) +
-	stat_boxplot(geom ='errorbar', width = 0.6)+
-	geom_boxplot(aes(fill=group),width = 0.6,outlier.shape = NA)+
+ggplot(data=chf_data,aes(x=group_700,y=chf_700days,colour=sex)) +
+	# stat_boxplot(geom ='errorbar', width = 0.6)+
+	geom_boxplot()+
 	# geom_jitter(aes(colour=group),size=1,position = position_jitter(0.2))+
 	# scale_y_continuous(limits = quantile(tmp_data$value, c(0.1, 0.9)))+
-	scale_fill_npg()+
+	scale_colour_npg()+
+	# scale_colour_manual(values=c(cols1[c(1,5,2,3)],"grey40"))+
 	theme_classic(base_size=12)+
 	theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave(file=paste0("CHF_1year_by_group.pdf"),width=5,height=3)
+ggsave(file=paste0("CHF_block_split_700days_by_group.pdf"),width=5,height=2.5)
 
-ggplot(data=chf_data,aes(x=group,y=chf_2year)) +
-	stat_boxplot(geom ='errorbar', width = 0.6)+
-	geom_boxplot(aes(fill=group),width = 0.6,outlier.shape = NA)+
+ggplot(data=chf_data,aes(x=group_1400,y=chf_1400days,colour=sex)) +
+	# stat_boxplot(geom ='errorbar', width = 0.6)+
+	geom_boxplot()+
 	# geom_jitter(aes(colour=group),size=1,position = position_jitter(0.2))+
 	# scale_y_continuous(limits = quantile(tmp_data$value, c(0.1, 0.9)))+
-	scale_fill_npg()+
+	scale_colour_npg()+
+	# scale_colour_manual(values=c(cols1[c(1,5,2,3)],"grey40"))+
 	theme_classic(base_size=12)+
 	theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave(file=paste0("CHF_2year_by_group.pdf"),width=5,height=3)
-
-ggplot(data=chf_data,aes(x=group,y=chf_3year)) +
-	stat_boxplot(geom ='errorbar', width = 0.6)+
-	geom_boxplot(aes(fill=group),width = 0.6,outlier.shape = NA)+
-	# geom_jitter(aes(colour=group),size=1,position = position_jitter(0.2))+
-	# scale_y_continuous(limits = quantile(tmp_data$value, c(0.1, 0.9)))+
-	scale_fill_npg()+
-	theme_classic(base_size=12)+
-	theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave(file=paste0("CHF_3year_by_group.pdf"),width=5,height=3)
-
-ggplot(data=chf_data,aes(x=group,y=chf_4year)) +
-	stat_boxplot(geom ='errorbar', width = 0.6)+
-	geom_boxplot(aes(fill=group),width = 0.6,outlier.shape = NA)+
-	# geom_jitter(aes(colour=group),size=1,position = position_jitter(0.2))+
-	# scale_y_continuous(limits = quantile(tmp_data$value, c(0.1, 0.9)))+
-	scale_fill_npg()+
-	theme_classic(base_size=12)+
-	theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave(file=paste0("CHF_4year_by_group.pdf"),width=5,height=3)
-
-ggplot(data=chf_data,aes(x=group,y=chf_5year)) +
-	stat_boxplot(geom ='errorbar', width = 0.6)+
-	geom_boxplot(aes(fill=group),width = 0.6,outlier.shape = NA)+
-	# geom_jitter(aes(colour=group),size=1,position = position_jitter(0.2))+
-	# scale_y_continuous(limits = quantile(tmp_data$value, c(0.1, 0.9)))+
-	scale_fill_npg()+
-	theme_classic(base_size=12)+
-	theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave(file=paste0("CHF_5year_by_group.pdf"),width=5,height=3)
+ggsave(file=paste0("CHF_block_split_1400days_by_group.pdf"),width=5,height=2.5)

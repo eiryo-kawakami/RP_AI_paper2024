@@ -2,10 +2,9 @@ from sksurv.ensemble import RandomSurvivalForest
 import pandas as pd
 import numpy as np
 import _pickle as cPickle
+from sklearn.inspection import permutation_importance
 from sklearn.model_selection import train_test_split
-import os, random
-from sksurv.ensemble import RandomSurvivalForest
-from survshap import SurvivalModelExplainer, ModelSurvSHAP
+import os
 
 n_rep = 10
 
@@ -25,9 +24,7 @@ feature["studynumber"] = studynumber
 patient_info = pd.read_csv("../patient_info.txt",sep="\t",header=0)
 patient_info["studynumber"] = patient_info["patient_id"].astype(str).str.cat(patient_info["LR"].str.lower(),sep="_").astype(str)
 
-dat = pd.merge(feature.loc[:,["studynumber"]+top_10_vars],patient_info.loc[:,["patient_id","studynumber","eyesightloss<0.3","DaysToOutcome"]],on="studynumber").dropna()
-dat2 = dat.copy()
-dat = dat.drop("studynumber",axis=1)
+dat = pd.merge(feature.loc[:,["studynumber"]+top_10_vars],patient_info.loc[:,["patient_id","studynumber","eyesightloss<0.3","DaysToOutcome"]],on="studynumber").drop("studynumber",axis=1).dropna()
 dat = dat.loc[dat["DaysToOutcome"] > 0,:]
 
 patient_list = list(set(dat["patient_id"]))
@@ -47,25 +44,33 @@ y_test["eyesightloss<0.3"] = [True if i==1 else False for i in y_test["eyesightl
 yy_test = y_test.to_records(index=False)
 X_test = dat_test.drop(["patient_id","eyesightloss<0.3","DaysToOutcome"],axis=1)
 
-dat_test = dat2.loc[dat2["patient_id"].isin(train_list),:]
+imp_summary = pd.DataFrame([])
+cindex_train = []
+cindex_test = []
 
-for i in range(10):
-	with open("./RSF_models/RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_block_split_rep"+str(i+1)+".sav", 'rb') as f:
-		rsf = cPickle.load(f)
+feature_names = X_train.columns.tolist()
+os.makedirs("./RSF_models", exist_ok=True)
+for i in range(n_rep):
+    rsf = RandomSurvivalForest(n_estimators=2000,min_samples_split=10,min_samples_leaf=15,max_features="sqrt",oob_score=True,n_jobs=16,verbose=1,random_state=i)
+    rsf.fit(X_train, yy_train)
+    with open("./RSF_models/RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_block_split_rep"+str(i+1)+".sav", 'wb') as f:
+        cPickle.dump(rsf, f)
 
-	rsf_exp = SurvivalModelExplainer(rsf, X_test, yy_test)
-	survshap_global_rsf = ModelSurvSHAP(random_state=i)
-	survshap_global_rsf.fit(rsf_exp)
+    cindex_train.append(rsf.oob_score_)
+    cindex_test.append(rsf.score(X_test, yy_test))
+    
+    perm = permutation_importance(rsf, X_train, yy_train, n_repeats=10, random_state=i)
+    imp_summary = pd.concat([imp_summary, pd.DataFrame(perm.importances_mean)], axis=1)
 
-	survshap_res_summary = pd.DataFrame([])
-	for j in range(len(survshap_global_rsf.individual_explanations)):
-		example_rsf = survshap_global_rsf.individual_explanations[j]
-		res = example_rsf.simplified_result
-		survshap_res_summary = pd.concat([survshap_res_summary,res["aggregated_change"]],axis=1)
+cindex_summary = pd.DataFrame([])
+cindex_summary["rep"] = list(range(10))
+cindex_summary["train"] = cindex_train
+cindex_summary["test"] = cindex_test
 
-	survshap_res_summary = survshap_res_summary.T
-	survshap_res_summary.columns = res.variable_name
+cindex_summary.to_csv("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_block_split_cindex.txt",sep="\t",index=False)
 
-	survshap_res_summary = pd.concat([dat_test.loc[:,["studynumber","eyesightloss<0.3","DaysToOutcome"]].reset_index(drop=True),survshap_res_summary.reset_index(drop=True)],axis=1)
+imp_summary.columns = [ "rep_"+str(i+1) for i in range(n_rep)]
+imp_summary.index = X_train.columns
 
-	survshap_res_summary.to_csv("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_rep"+str(i+1)+"_survSHAP_aggregated.txt",sep="\t",index=False)
+imp_summary.to_csv("RP_eyesight_loss<0.3_RSF_DaysToOutcome>0_top10vars_block_split_varimp.txt",sep="\t")
+
